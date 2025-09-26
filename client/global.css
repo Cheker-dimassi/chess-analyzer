@@ -1,0 +1,177 @@
+@tailwind components;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /**
+   * Tailwind CSS theme
+   * tailwind.config.ts expects the following color variables to be expressed as HSL values.
+   * A different format will require also updating the theme in tailwind.config.ts.
+   */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 210 12% 16%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 210 12% 16%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 12% 16%;
+
+    --primary: 210 12% 16%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 36 33% 95%;
+    --secondary-foreground: 210 12% 16%;
+
+    --muted: 36 33% 95%;
+    --muted-foreground: 210 6% 46%;
+
+    --accent: 36 64% 57%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 36 33% 88%;
+    --input: 36 33% 95%;
+    --ring: 222.2 84% 4.9%;
+
+    --radius: 0.5rem;
+
+    /* Chess app specific colors */
+    --chess-light: 36 33% 95%;
+    --chess-dark: 36 64% 57%;
+    /* Blue/white board like reference image */
+    --chess-board-light: 0 0% 100%;
+    /* #7086b8 ≈ hsl(222 33% 58%) */
+    --chess-board-dark: 222 33% 58%;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Unified theme background variables */
+    --app-bg-1: 210 20% 99%;
+    --app-bg-2: 210 24% 96%;
+  }
+
+  .dark {
+    --background: 210 11% 15%;
+    --foreground: 0 0% 98%;
+
+    --card: 210 11% 15%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 210 11% 15%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 36 64% 57%;
+    --primary-foreground: 210 11% 15%;
+
+    --secondary: 210 11% 21%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 210 11% 21%;
+    --muted-foreground: 215 16% 65%;
+
+    --accent: 36 64% 57%;
+    --accent-foreground: 210 11% 15%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 210 11% 21%;
+    --input: 210 11% 21%;
+    --ring: 212.7 26.8% 83.9%;
+
+    /* Chess app specific colors - dark mode */
+    --chess-light: 210 11% 21%;
+    --chess-dark: 36 64% 57%;
+    /* Keep a blue contrast in dark mode */
+    --chess-board-light: 220 12% 20%;
+    --chess-board-dark: 220 36% 60%;
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Unified theme background variables (dark) */
+    --app-bg-1: 220 18% 18%;
+    --app-bg-2: 220 18% 12%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    transition: background-color 400ms ease, color 400ms ease;
+  }
+}
+
+@layer utilities {
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-float-delayed {
+    animation: float 6s ease-in-out infinite;
+    animation-delay: 2s;
+  }
+
+  .animate-glow {
+    animation: glow 4s ease-in-out infinite alternate;
+  }
+
+  /* Unified theme background helpers */
+  .theme-bg {
+    background-image:
+      radial-gradient(1200px 800px at 10% 10%, hsl(var(--app-bg-2)), transparent 60%),
+      linear-gradient(135deg, hsl(var(--app-bg-1)), hsl(var(--app-bg-2)));
+    transition: background 500ms ease;
+  }
+  .theme-overlay {
+    background-image:
+      linear-gradient( to top left, rgba(255,255,255,0.06), rgba(0,0,0,0) 60% );
+    transition: background 500ms ease, opacity 500ms ease;
+  }
+
+  /* Extra smoothness when toggling theme */
+  .theme-animating .theme-bg,
+  .theme-animating .theme-overlay,
+  .theme-animating body {
+    transition-duration: 700ms;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-20px) rotate(5deg); }
+}
+
+@keyframes glow {
+  from { opacity: 0.4; }
+  to { opacity: 0.8; }
+}
