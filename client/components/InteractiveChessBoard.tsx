@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import type { Square, Move } from "chess.js";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,14 @@ const pieceSymbols: Record<string, string> = {
   k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟"
 };
 
+const MOVE_ANIMATION_DURATION = 260;
+
+type MoveAnimationState = {
+  pieceCode: string;
+  from: string;
+  to: string;
+};
+
 export default function InteractiveChessBoard({
   fen,
   playerColor,
@@ -41,19 +49,64 @@ export default function InteractiveChessBoard({
   const [possibleMoves, setPossibleMoves] = useState<string[]>([]);
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
   const [promotionSquare, setPromotionSquare] = useState<{ from: string; to: string } | null>(null);
+  const [animatingMove, setAnimatingMove] = useState<{ from: string; to: string } | null>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const boardContainerRef = useRef<HTMLDivElement | null>(null);
+  const initialLoadRef = useRef(true);
+  const animationStartRef = useRef<number>();
+  const animationFrameRef = useRef<number>();
+  const animationTimeoutRef = useRef<number>();
+  const [boardSize, setBoardSize] = useState(0);
+  const [activeAnimation, setActiveAnimation] = useState<MoveAnimationState | null>(null);
+  const [animateProgress, setAnimateProgress] = useState(false);
+
+  useLayoutEffect(() => {
+    const element = boardContainerRef.current;
+    if (!element) return;
+
+    const updateSize = () => {
+      const { width } = element.getBoundingClientRect();
+      setBoardSize(width);
+    };
+
+    updateSize();
+
+    const observer = new ResizeObserver(() => updateSize());
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [size]);
 
   useEffect(() => {
     chess.load(fen);
     setBoard(chess.board());
-    
-    // Extract last move from history if available
-    const history = chess.history({ verbose: true });
+
+    const history = chess.history({ verbose: true }) as Move[];
     if (history.length > 0) {
       const lastMoveData = history[history.length - 1];
       setLastMove({ from: lastMoveData.from, to: lastMoveData.to });
+
+      if (!initialLoadRef.current) {
+        const pieceCode = lastMoveData.color === 'w'
+          ? lastMoveData.piece.toUpperCase()
+          : lastMoveData.piece;
+
+        setActiveAnimation({
+          pieceCode,
+          from: lastMoveData.from,
+          to: lastMoveData.to,
+        });
+      }
     } else {
       setLastMove(null);
+      if (!initialLoadRef.current) {
+        setActiveAnimation(null);
+      }
     }
+
+    initialLoadRef.current = false;
   }, [fen, chess]);
 
   const sizeClasses = {
@@ -61,6 +114,58 @@ export default function InteractiveChessBoard({
     md: "w-80 h-80", 
     lg: "w-96 h-96"
   };
+
+  useEffect(() => {
+    if (!activeAnimation || boardSize === 0) {
+      return;
+    }
+
+    setAnimateProgress(false);
+
+    if (animationStartRef.current !== undefined) {
+      window.cancelAnimationFrame(animationStartRef.current);
+      animationStartRef.current = undefined;
+    }
+
+    if (animationFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = undefined;
+    }
+
+    if (animationTimeoutRef.current !== undefined) {
+      window.clearTimeout(animationTimeoutRef.current);
+      animationTimeoutRef.current = undefined;
+    }
+
+    animationStartRef.current = window.requestAnimationFrame(() => {
+      animationFrameRef.current = window.requestAnimationFrame(() => {
+        setAnimateProgress(true);
+      });
+    });
+
+    animationTimeoutRef.current = window.setTimeout(() => {
+      setAnimateProgress(false);
+      setActiveAnimation(null);
+      animationTimeoutRef.current = undefined;
+    }, MOVE_ANIMATION_DURATION);
+
+    return () => {
+      if (animationStartRef.current !== undefined) {
+        window.cancelAnimationFrame(animationStartRef.current);
+        animationStartRef.current = undefined;
+      }
+
+      if (animationFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = undefined;
+      }
+
+      if (animationTimeoutRef.current !== undefined) {
+        window.clearTimeout(animationTimeoutRef.current);
+        animationTimeoutRef.current = undefined;
+      }
+    };
+  }, [activeAnimation, boardSize]);
 
   const getSquareName = (row: number, col: number): string => {
     const fileIndex = playerColor === 'white' ? col : 7 - col;
@@ -74,6 +179,16 @@ export default function InteractiveChessBoard({
     const row = playerColor === 'white' ? 7 - rank : rank;
     const col = playerColor === 'white' ? file : 7 - file;
     return { row, col };
+  };
+
+  const getSquareOffset = (squareName: string): { x: number; y: number } => {
+    if (boardSize === 0) return { x: 0, y: 0 };
+    const { row, col } = getSquarePosition(squareName);
+    const squareLength = boardSize / 8;
+    return {
+      x: col * squareLength,
+      y: row * squareLength,
+    };
   };
 
   const getLegalMoves = (square: Square): string[] => {
@@ -178,11 +293,11 @@ export default function InteractiveChessBoard({
   const getSquareColor = (row: number, col: number): string => {
     const isLight = (row + col) % 2 === 0;
     const squareName = getSquareName(row, col);
-    
+
     if (selectedSquare === squareName) {
       return isLight ? "bg-yellow-300" : "bg-yellow-400";
     }
-    
+
     if (possibleMoves.includes(squareName)) {
       const piece = board[row][col];
       if (piece) {
@@ -191,21 +306,41 @@ export default function InteractiveChessBoard({
         return isLight ? "bg-green-300" : "bg-green-400"; // Move
       }
     }
-    
+
+    // Enhanced highlighting for last move with stronger colors
     if (highlightLastMove && lastMove) {
-      if (lastMove.from === squareName || lastMove.to === squareName) {
-        return isLight ? "bg-blue-200" : "bg-blue-300";
+      if (lastMove.from === squareName) {
+        return isLight ? "bg-orange-300 animate-pulse-highlight" : "bg-orange-400 animate-pulse-highlight"; // Source square - orange
+      }
+      if (lastMove.to === squareName) {
+        return isLight ? "bg-blue-300 animate-pulse-highlight" : "bg-blue-400 animate-pulse-highlight"; // Destination square - blue
       }
     }
-    
+
     return isLight ? "bg-chess-board-light" : "bg-chess-board-dark";
   };
+
+  const pieceSizeClass =
+    size === "sm"
+      ? "w-6 h-6 xs:w-7 xs:h-7 sm:w-8 sm:h-8"
+      : size === "md"
+        ? "w-8 h-8 xs:w-9 xs:h-9 sm:w-10 sm:h-10"
+        : "w-10 h-10 xs:w-12 xs:h-12 sm:w-14 sm:h-14";
+
+  const squareLength = boardSize > 0 ? boardSize / 8 : 0;
+
+  const animationOffsets = activeAnimation && boardSize > 0
+    ? {
+        from: getSquareOffset(activeAnimation.from),
+        to: getSquareOffset(activeAnimation.to),
+      }
+    : null;
 
   return (
     <div className={cn("relative inline-block", className)}>
       {/* Chess Board */}
       <div className="pl-6 pb-6">
-        <div className={cn("relative inline-block overflow-hidden", sizeClasses[size])}>
+        <div ref={boardContainerRef} className={cn("relative inline-block overflow-hidden", sizeClasses[size])}>
           <div className="grid grid-cols-8 grid-rows-8 w-full h-full">
           {board.map((row, rowIndex) =>
             row.map((piece, colIndex) => {
@@ -223,15 +358,10 @@ export default function InteractiveChessBoard({
                   )}
                   onClick={() => handleSquareClick(rowIndex, colIndex)}
                 >
-                  {piece && (
+                  {piece && (!activeAnimation || activeAnimation.to !== squareName) && (
                     <PieceSvg
                       code={piece.color === 'w' ? piece.type.toUpperCase() : piece.type}
-                      className={cn(
-                        "pointer-events-none",
-                        size === "sm" && "w-6 h-6 xs:w-7 xs:h-7 sm:w-8 sm:h-8",
-                        size === "md" && "w-8 h-8 xs:w-9 xs:h-9 sm:w-10 sm:h-10",
-                        size === "lg" && "w-10 h-10 xs:w-12 xs:h-12 sm:w-14 sm:h-14"
-                      )}
+                      className={cn("pointer-events-none", pieceSizeClass)}
                     />
                   )}
                   
@@ -244,6 +374,26 @@ export default function InteractiveChessBoard({
             })
           )}
           </div>
+
+          {activeAnimation && animationOffsets && (
+            <div className="pointer-events-none absolute inset-0">
+              <div
+                className="absolute flex items-center justify-center animate-piece-move"
+                style={{
+                  width: squareLength,
+                  height: squareLength,
+                  transform: `translate(${animateProgress ? animationOffsets.to.x : animationOffsets.from.x}px, ${animateProgress ? animationOffsets.to.y : animationOffsets.from.y}px)`,
+                  transition: `transform ${MOVE_ANIMATION_DURATION}ms ease-in-out`,
+                  willChange: "transform",
+                }}
+              >
+                <PieceSvg
+                  code={activeAnimation.pieceCode}
+                  className={cn("pointer-events-none", pieceSizeClass)}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Outside coordinates */}
           {showCoordinates && size !== "sm" && (

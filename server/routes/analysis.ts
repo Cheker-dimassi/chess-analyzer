@@ -119,7 +119,7 @@ export const analyzePosition: RequestHandler = async (req, res) => {
     console.error('Position analysis error:', error);
     res.status(500).json({
       success: false,
-      error: `Failed to analyze position: ${error.message}`
+      error: `Failed to analyze position: ${error instanceof Error ? error.message : String(error)}`
     } as PositionAnalysisResponse);
   }
 };

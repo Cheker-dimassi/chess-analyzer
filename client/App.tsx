@@ -11,6 +11,7 @@ import Navigation from "@/components/Navigation";
 import Index from "./pages/Index";
 import Capture from "./pages/Capture";
 import Analyze from "./pages/Analyze";
+import AnalysisBoard from "./pages/AnalysisBoard";
 import Play from "./pages/Play";
 import Game from "./pages/Game";
 import Tournament from "./pages/Tournament";
@@ -33,6 +34,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/capture" element={<Capture />} />
             <Route path="/analyze" element={<Analyze />} />
+            <Route path="/analysis" element={<AnalysisBoard />} />
             <Route path="/play" element={<Play />} />
             <Route path="/game/:gameId" element={<Game />} />
             <Route path="/tournament" element={<Tournament />} />

@@ -10,6 +10,7 @@ import {
   getAnalysisHistory, 
   deleteAnalysis 
 } from "./routes/analysis";
+import { advancedAnalysis } from "./routes/advancedAnalysis";
 import { 
   createGame, 
   makeMove, 
@@ -49,6 +50,7 @@ export function createServer() {
   // Chess Analysis Routes
   app.post("/api/analysis/image", analyzeImage);
   app.post("/api/analysis/position", analyzePosition);
+  app.post("/api/analysis/advanced", advancedAnalysis);
   app.get("/api/analysis/history", getAnalysisHistory);
   app.delete("/api/analysis/:id", deleteAnalysis);
 

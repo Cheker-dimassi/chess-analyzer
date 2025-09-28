@@ -27,22 +27,39 @@ class StockfishEngine {
       throw new Error('Stockfish engine not ready');
     }
 
+    const searchDepth = Math.max(1, Math.min(depth, 4));
+
     // Simulate Stockfish analysis with more realistic results
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       setTimeout(() => {
-        const evaluation = this.calculateStockfishEvaluation(fen, depth);
-        const bestMove = this.calculateBestMove(fen, depth);
-        
-        resolve({
-          depth,
-          evaluation,
-          bestMove,
-          principalVariation: this.calculatePrincipalVariation(fen, bestMove, 3),
-          nodes: Math.floor(Math.random() * 100000) + 50000,
-          time: Math.floor(Math.random() * 2000) + 500,
-          nps: Math.floor(Math.random() * 500000) + 1000000
-        });
-      }, Math.random() * 1000 + 500); // Simulate analysis time
+        try {
+          const evaluation = this.calculateStockfishEvaluation(fen, searchDepth);
+          const bestMove = this.calculateBestMove(fen, searchDepth);
+
+          const hasLegalMove = Boolean(bestMove?.from && bestMove?.to);
+          const principalVariation = hasLegalMove
+            ? this.calculatePrincipalVariation(fen, bestMove!, Math.min(searchDepth, 3))
+            : [];
+
+          resolve({
+            depth: searchDepth,
+            evaluation,
+            bestMove: hasLegalMove
+              ? bestMove
+              : {
+                  from: '',
+                  to: '',
+                  san: this.describeTerminalPosition(fen),
+                },
+            principalVariation,
+            nodes: Math.floor(Math.random() * 20000) + 10000,
+            time: Math.floor(Math.random() * 400) + 200,
+            nps: Math.floor(Math.random() * 200000) + 300000
+          });
+        } catch (error) {
+          reject(error);
+        }
+      }, Math.random() * 200 + 150);
     });
   }
 
@@ -155,23 +172,24 @@ class StockfishEngine {
     return (whiteMoves - blackMoves) * 2;
   }
 
-  private calculateBestMove(fen: string, depth: number): any {
+  private calculateBestMove(fen: string, depth: number): any | null {
     const chess = new Chess(fen);
     const moves = chess.moves({ verbose: true });
-    
+
     if (moves.length === 0) {
-      return { from: '', to: '', san: 'No legal moves' };
+      return null;
     }
 
     // More sophisticated move selection
     let bestMove = moves[0];
     let bestScore = -Infinity;
-    
-    for (const move of moves.slice(0, Math.min(moves.length, 10))) {
+    const searchDepth = Math.max(1, Math.min(depth, 4));
+
+    for (const move of moves.slice(0, Math.min(moves.length, 5))) {
       chess.move(move);
-      const score = this.evaluateQuick(chess, depth);
+      const score = this.evaluateQuick(chess, searchDepth - 1);
       chess.undo();
-      
+
       if (score > bestScore) {
         bestScore = score;
         bestMove = move;
@@ -190,18 +208,32 @@ class StockfishEngine {
     if (depth <= 0 || chess.isGameOver()) {
       return this.evaluateMaterial(chess) + this.evaluatePosition(chess);
     }
-    
+
     const moves = chess.moves({ verbose: true });
     let maxScore = -Infinity;
-    
-    for (const move of moves.slice(0, 3)) { // Limited search for demo
+
+    for (const move of moves.slice(0, 3)) {
       chess.move(move);
       const score = -this.evaluateQuick(chess, depth - 1);
       chess.undo();
       maxScore = Math.max(maxScore, score);
     }
-    
+
     return maxScore;
+  }
+
+  private describeTerminalPosition(fen: string): string {
+    const chess = new Chess(fen);
+    if (chess.isCheckmate()) {
+      return chess.turn() === 'w' ? 'Checkmate • Black wins' : 'Checkmate • White wins';
+    }
+    if (chess.isStalemate()) {
+      return 'Stalemate';
+    }
+    if (chess.isDraw()) {
+      return 'Draw';
+    }
+    return 'No legal moves';
   }
 
   private calculatePrincipalVariation(fen: string, bestMove: any, depth: number): string[] {

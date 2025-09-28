@@ -78,17 +78,17 @@ export default function Analyze() {
                 <div className="w-12 h-12 bg-accent/20 rounded-xl flex items-center justify-center">
                   <Edit className="w-6 h-6 text-accent" />
                 </div>
-                Manual Position Setup
+                Interactive Analysis Board
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-muted-foreground mb-4">
-                Set up a chess position manually using an interactive board editor
+                Open the full analysis board with engine evaluation and move navigation
               </p>
               <Button variant="outline" className="w-full" asChild>
-                <Link to="/play">
+                <Link to="/analysis">
                   <Edit className="w-4 h-4 mr-2" />
-                  Setup Position
+                  Open Analysis Board
                 </Link>
               </Button>
             </CardContent>
@@ -150,6 +150,13 @@ export default function Analyze() {
             )}
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setFenDialogOpen(false)}>Close</Button>
+              {isFenValid && (
+                <Button asChild>
+                  <Link to={`/analysis?fen=${encodeURIComponent(fenInput)}`}>
+                    Analyze Position
+                  </Link>
+                </Button>
+              )}
             </div>
           </div>
         </DialogContent>
