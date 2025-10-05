@@ -755,10 +755,67 @@ export default function AnalysisBoard({
                     <span>Best Moves</span>
                     <Badge variant="secondary" className="text-xs">Top 3</Badge>
                   </h4>
+                  
+                  {/* Move Rating Legend */}
+                  <div className="mb-3 p-2 bg-muted/30 rounded-lg text-xs">
+                    <div className="font-medium mb-1">Move Ratings:</div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                      <span><span className="font-bold text-green-600">!!</span> Brilliant</span>
+                      <span><span className="font-bold text-green-600">!</span> Good move</span>
+                      <span><span className="font-bold text-green-600">✓</span> Best available</span>
+                      <span><span className="font-bold text-blue-600">!?</span> Interesting</span>
+                      <span><span className="font-bold text-orange-600">=</span> Equal</span>
+                      <span><span className="font-bold text-orange-600">?!</span> Dubious</span>
+                      <span><span className="font-bold text-red-600">?</span> Inaccuracy</span>
+                    </div>
+                  </div>
                   <div className="space-y-3">
                     {analysis.bestMoves.slice(0, 3).map((move, index) => {
                       const colors = ['#10b981', '#3b82f6', '#f59e0b'];
                       const labels = ['Best', '2nd', '3rd'];
+                      
+                      // Determine move rating symbol based on evaluation
+                      const evalDiff = index === 0 ? 0 : Math.abs(analysis.bestMoves[0].evaluation - move.evaluation);
+                      let moveSymbol = '';
+                      let symbolColor = '';
+                      let symbolBg = '';
+                      
+                      if (index === 0) {
+                        // Best move
+                        if (move.evaluation > 300) {
+                          moveSymbol = '!!'; // Brilliant
+                          symbolColor = '#10b981';
+                          symbolBg = '#10b98120';
+                        } else if (move.evaluation > 100) {
+                          moveSymbol = '!'; // Good
+                          symbolColor = '#10b981';
+                          symbolBg = '#10b98120';
+                        } else {
+                          moveSymbol = '✓'; // Best available
+                          symbolColor = '#10b981';
+                          symbolBg = '#10b98120';
+                        }
+                      } else {
+                        // Alternative moves
+                        if (evalDiff < 25) {
+                          moveSymbol = '!?'; // Interesting
+                          symbolColor = '#3b82f6';
+                          symbolBg = '#3b82f620';
+                        } else if (evalDiff < 100) {
+                          moveSymbol = '='; // Equal
+                          symbolColor = '#f59e0b';
+                          symbolBg = '#f59e0b20';
+                        } else if (evalDiff < 200) {
+                          moveSymbol = '?!'; // Dubious
+                          symbolColor = '#f59e0b';
+                          symbolBg = '#f59e0b20';
+                        } else {
+                          moveSymbol = '?'; // Inaccuracy
+                          symbolColor = '#ef4444';
+                          symbolBg = '#ef444420';
+                        }
+                      }
+                      
                       return (
                         <div 
                           key={index} 
@@ -781,6 +838,15 @@ export default function AnalysisBoard({
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
                                 <span className="font-mono font-bold text-base">{move.san}</span>
+                                <div 
+                                  className="px-2 py-0.5 rounded-full text-xs font-bold"
+                                  style={{ 
+                                    color: symbolColor,
+                                    backgroundColor: symbolBg
+                                  }}
+                                >
+                                  {moveSymbol}
+                                </div>
                                 <Badge variant="outline" className="text-xs">{labels[index]}</Badge>
                                 <span className="text-sm font-semibold ml-auto">
                                   {move.evaluation > 0 ? '+' : ''}{(move.evaluation / 100).toFixed(2)}
