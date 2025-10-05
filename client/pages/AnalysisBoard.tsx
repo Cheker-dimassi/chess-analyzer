@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import AnalysisBoard from "@/components/AnalysisBoard";
 import PositionEditor from "@/components/PositionEditor";
+import SkinSelector from "@/components/SkinSelector";
 import { ArrowLeft, Upload, Edit, Brain, Share2, Settings } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Chess } from "chess.js";
@@ -72,6 +73,7 @@ export default function AnalysisBoardPage() {
           </div>
           
           <div className="flex items-center gap-2">
+            <SkinSelector />
             <Button variant="outline" size="sm" onClick={() => setPositionEditorOpen(true)}>
               <Settings className="w-4 h-4 mr-2" />
               Edit Position

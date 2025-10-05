@@ -3,6 +3,7 @@ import { Chess } from "chess.js";
 import type { Square, Move } from "chess.js";
 import { cn } from "@/lib/utils";
 import { PieceSvg } from "./ChessPieces";
+import { useSkin } from "@/hooks/useSkin";
 
 interface InteractiveChessBoardProps {
   fen: string;
@@ -43,7 +44,18 @@ export default function InteractiveChessBoard({
   showCoordinates = true,
   disabled = false
 }: InteractiveChessBoardProps) {
+  const { currentSkin } = useSkin();
   const [chess] = useState(() => new Chess());
+
+  // Apply skin styles dynamically
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--skin-board-light', currentSkin.board.lightSquare);
+    root.style.setProperty('--skin-board-dark', currentSkin.board.darkSquare);
+    if (currentSkin.board.border) {
+      root.style.setProperty('--skin-board-border', currentSkin.board.border);
+    }
+  }, [currentSkin]);
   const [board, setBoard] = useState<(any | null)[][]>([]);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [possibleMoves, setPossibleMoves] = useState<string[]>([]);
@@ -317,7 +329,8 @@ export default function InteractiveChessBoard({
       }
     }
 
-    return isLight ? "bg-chess-board-light" : "bg-chess-board-dark";
+    // Use skin colors
+    return isLight ? "skin-board-light" : "skin-board-dark";
   };
 
   const pieceSizeClass =

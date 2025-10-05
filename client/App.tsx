@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import Navigation from "@/components/Navigation";
+import { SkinProvider } from "@/components/SkinProvider";
 import Index from "./pages/Index";
 import Capture from "./pages/Capture";
 import Analyze from "./pages/Analyze";
@@ -26,11 +27,12 @@ const App = () => (
   <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Navigation />
-          <Routes>
+        <SkinProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Navigation />
+            <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/capture" element={<Capture />} />
             <Route path="/analyze" element={<Analyze />} />
@@ -44,7 +46,8 @@ const App = () => (
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </BrowserRouter>
+          </BrowserRouter>
+        </SkinProvider>
       </TooltipProvider>
     </QueryClientProvider>
   </ThemeProvider>

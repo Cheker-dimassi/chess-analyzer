@@ -47,6 +47,12 @@
     --chess-board-light: 0 0% 100%;
     /* #7086b8 ≈ hsl(222 33% 58%) */
     --chess-board-dark: 222 33% 58%;
+    
+    /* Skin system variables */
+    --skin-board-light: var(--chess-board-light);
+    --skin-board-dark: var(--chess-board-dark);
+    --skin-board-border: hsl(var(--border));
+    --skin-piece-color: hsl(var(--foreground));
 
     --sidebar-background: 0 0% 98%;
 
@@ -104,6 +110,12 @@
     /* Keep a blue contrast in dark mode */
     --chess-board-light: 220 12% 20%;
     --chess-board-dark: 220 36% 60%;
+    
+    /* Skin system variables - dark mode */
+    --skin-board-light: var(--chess-board-light);
+    --skin-board-dark: var(--chess-board-dark);
+    --skin-board-border: hsl(var(--border));
+    --skin-piece-color: hsl(var(--foreground));
 
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
@@ -205,4 +217,270 @@
 
 .animate-piece-move {
   animation: piece-move 0.3s ease-in-out;
+}
+
+/* Skin system utilities */
+.skin-board-light {
+  background-color: var(--skin-board-light);
+}
+
+.skin-board-dark {
+  background-color: var(--skin-board-dark);
+}
+
+.skin-board-border {
+  border-color: var(--skin-board-border);
+}
+
+.skin-piece {
+  color: var(--skin-piece-color);
+}
+
+/* Piece skin styles */
+.piece-classic {
+  color: #2c2c2c;
+  filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+.piece-modern {
+  color: #1a1a1a;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+.piece-fantasy {
+  color: #4a2c2a;
+  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.4)) drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.5));
+}
+
+.piece-minimal {
+  color: #333333;
+  filter: none;
+}
+
+.piece-vintage {
+  color: #8B4513;
+  filter: sepia(0.3) contrast(1.1) brightness(0.9);
+}
+
+/* Piece color variations */
+.piece-white {
+  color: #ffffff;
+  filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.5));
+}
+
+.piece-black {
+  color: #1a1a1a;
+  filter: drop-shadow(1px 1px 2px rgba(255, 255, 255, 0.1));
+}
+
+/* Fantasy piece special effects */
+.piece-fantasy-white {
+  color: #ffffff;
+  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.6)) drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.5));
+}
+
+.piece-fantasy-black {
+  color: #2c2c2c;
+  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.4)) drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.5));
+}
+
+/* Vintage piece effects */
+.piece-vintage-white {
+  color: #f5f5dc;
+  filter: sepia(0.2) contrast(1.1) brightness(1.1);
+}
+
+.piece-vintage-black {
+  color: #8B4513;
+  filter: sepia(0.4) contrast(1.1) brightness(0.8);
+}
+
+/* Flat Outline style: filled with stroke-like outline via drop-shadow */
+.piece-flat {
+  color: #2b2b2b;
+  filter: none;
+}
+.piece-flat-white { color: #f5f5f5; }
+.piece-flat-black { color: #2b2b2b; }
+
+/* Outline strokes for flat style */
+.piece-flat svg *, .piece-flat-white svg *, .piece-flat-black svg * {
+  stroke: #1f2937; /* slate-800 */
+  stroke-width: 1.5px;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.piece-flat-black svg * { stroke: #000000; }
+.piece-flat-white svg * { stroke: #111827; /* slate-900 */ }
+
+/* Garden Classic style */
+.piece-garden {
+  filter: drop-shadow(0 2px 4px rgba(32, 48, 22, 0.35));
+}
+.piece-garden svg * {
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.piece-garden-white {
+  color: #f5f2dd;
+}
+.piece-garden-white svg * {
+  stroke: #39552a;
+  stroke-width: 1.4px;
+}
+.piece-garden-black {
+  color: #2c2f20;
+}
+.piece-garden-black svg * {
+  stroke: #e5e0c9;
+  stroke-width: 1.2px;
+}
+
+/* Glacier Glow style */
+.piece-glacier {
+  filter: drop-shadow(0 0 6px rgba(80, 170, 255, 0.45));
+}
+.piece-glacier svg * {
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.piece-glacier-white {
+  color: #c7e4ff;
+}
+.piece-glacier-white svg * {
+  stroke: rgba(15, 61, 115, 0.65);
+  stroke-width: 1.2px;
+}
+.piece-glacier-black {
+  color: #1e3956;
+}
+.piece-glacier-black svg * {
+  stroke: rgba(199, 228, 255, 0.65);
+  stroke-width: 1.2px;
+}
+
+/* Outline Contrast style */
+.piece-outline {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+.piece-outline svg * {
+  stroke-width: 1.8px;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.piece-outline-white {
+  color: #f6eee3;
+}
+.piece-outline-white svg * {
+  stroke: #39261f;
+}
+.piece-outline-black {
+  color: #3d2f2a;
+}
+.piece-outline-black svg * {
+  stroke: #f0e7da;
+}
+
+/* Royal Emblem style */
+.piece-royal {
+  filter: drop-shadow(0 0 8px rgba(184, 142, 35, 0.5));
+}
+.piece-royal svg * {
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.piece-royal-white {
+  color: #f4cf74;
+}
+.piece-royal-white svg * {
+  stroke: #513a08;
+  stroke-width: 1.3px;
+}
+.piece-royal-black {
+  color: #b9c1d0;
+}
+.piece-royal-black svg * {
+  stroke: #1d232b;
+  stroke-width: 1.3px;
+}
+
+/* Chess.com style pieces */
+.piece-chesscom {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+.piece-chesscom svg g {
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.piece-chesscom-white {
+  color: #ffffff;
+}
+.piece-chesscom-white svg g path,
+.piece-chesscom-white svg g circle,
+.piece-chesscom-white svg g rect,
+.piece-chesscom-white svg g polygon {
+  stroke: #000000 !important;
+  stroke-width: 1.5px !important;
+}
+.piece-chesscom-black {
+  color: #000000;
+}
+.piece-chesscom-black svg g path,
+.piece-chesscom-black svg g circle,
+.piece-chesscom-black svg g rect,
+.piece-chesscom-black svg g polygon {
+  stroke: #ffffff !important;
+  stroke-width: 1.5px !important;
+}
+
+/* Board skin patterns */
+.skin-pattern-wood {
+  background-image: 
+    linear-gradient(45deg, transparent 25%, rgba(0,0,0,0.1) 25%),
+    linear-gradient(-45deg, transparent 25%, rgba(0,0,0,0.1) 25%),
+    linear-gradient(45deg, rgba(0,0,0,0.1) 75%, transparent 75%),
+    linear-gradient(-45deg, rgba(0,0,0,0.1) 75%, transparent 75%);
+  background-size: 4px 4px;
+  background-position: 0 0, 0 2px, 2px -2px, -2px 0px;
+}
+
+.skin-pattern-marble {
+  background-image: 
+    radial-gradient(circle at 20% 50%, rgba(255,255,255,0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(255,255,255,0.1) 0%, transparent 50%),
+    radial-gradient(circle at 40% 80%, rgba(255,255,255,0.1) 0%, transparent 50%);
+}
+
+.skin-pattern-glass {
+  background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
+  backdrop-filter: blur(10px);
+}
+
+.skin-pattern-neon {
+  box-shadow: 
+    inset 0 0 10px rgba(0,255,136,0.3),
+    0 0 20px rgba(0,255,136,0.2);
+}
+
+.skin-pattern-ocean {
+  background-image: 
+    linear-gradient(45deg, rgba(135,206,235,0.1) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(135,206,235,0.1) 25%, transparent 25%);
+  background-size: 8px 8px;
+}
+
+.skin-pattern-forest {
+  background-image: 
+    radial-gradient(circle at 30% 30%, rgba(34,139,34,0.1) 0%, transparent 50%),
+    radial-gradient(circle at 70% 70%, rgba(34,139,34,0.1) 0%, transparent 50%);
+}
+
+.skin-pattern-gold {
+  background: linear-gradient(135deg, #ffd700 0%, #ffed4e 50%, #ffd700 100%);
+  box-shadow: inset 0 0 20px rgba(255,215,0,0.3);
+}
+
+.skin-pattern-ice {
+  background: linear-gradient(135deg, rgba(230,243,255,0.8) 0%, rgba(135,206,250,0.6) 100%);
+  box-shadow: inset 0 0 20px rgba(70,130,180,0.2);
 }

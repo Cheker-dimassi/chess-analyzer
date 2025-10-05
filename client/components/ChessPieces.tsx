@@ -1,4 +1,5 @@
 import React from "react";
+import SkinnedPiece from "./SkinnedPiece";
 
 type PieceColor = "white" | "black";
 
@@ -71,26 +72,10 @@ export const Pawn: React.FC<PieceProps> = ({ color, className }) => (
 );
 
 export const PieceSvg: React.FC<{ code: string; className?: string }> = ({ code, className }) => {
-  const isWhite = code === code.toUpperCase();
-  const color: PieceColor = isWhite ? "white" : "black";
-  const type = code.toUpperCase();
   const cls = className ?? "w-full h-full";
-  switch (type) {
-    case "K":
-      return <King color={color} className={cls} />;
-    case "Q":
-      return <Queen color={color} className={cls} />;
-    case "R":
-      return <Rook color={color} className={cls} />;
-    case "B":
-      return <Bishop color={color} className={cls} />;
-    case "N":
-      return <Knight color={color} className={cls} />;
-    case "P":
-      return <Pawn color={color} className={cls} />;
-    default:
-      return null;
-  }
+  
+  // Use the new SkinnedPiece component for skin support
+  return <SkinnedPiece piece={code} className={cls} />;
 };
 
 

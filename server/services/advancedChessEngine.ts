@@ -16,6 +16,7 @@ export interface AdvancedAnalysisResult {
     confidence: number;
     explanation: string;
     tactical: string[];
+    line: string[]; // Continuation moves
   }>;
   position: {
     material: { white: number; black: number };
@@ -78,7 +79,8 @@ export class AdvancedChessEngine {
         depth: depth,
         confidence: this.calculateConfidence(evaluation, depth),
         explanation: this.generateMoveExplanation(move, evaluation),
-        tactical: this.identifyTacticalPatterns(move)
+        tactical: this.identifyTacticalPatterns(move),
+        line: this.generateContinuationLine(move, Math.min(depth, 5))
       });
     }
 
@@ -290,6 +292,41 @@ export class AdvancedChessEngine {
     const depthBonus = Math.min(depth * 5, 50);
     const clarityBonus = Math.min(Math.abs(evaluation.value) * 10, 30);
     return Math.min(depthBonus + clarityBonus, 100);
+  }
+
+  private generateContinuationLine(move: Move, depth: number): string[] {
+    const line = [move.san];
+    const tempChess = new Chess(this.chess.fen());
+    
+    // Make the initial move
+    tempChess.move(move);
+    
+    // Generate continuation moves
+    for (let i = 1; i < depth; i++) {
+      const moves = tempChess.moves({ verbose: true }) as Move[];
+      if (moves.length === 0) break;
+      
+      // Analyze each move and pick the best one
+      let bestMove = moves[0];
+      let bestEval = -Infinity;
+      
+      for (const m of moves.slice(0, 3)) { // Check top 3 moves
+        tempChess.move(m);
+        const evaluation = this.quickEvaluation();
+        tempChess.undo();
+        
+        const adjustedEval = tempChess.turn() === 'w' ? evaluation : -evaluation;
+        if (adjustedEval > bestEval) {
+          bestEval = adjustedEval;
+          bestMove = m;
+        }
+      }
+      
+      line.push(bestMove.san);
+      tempChess.move(bestMove);
+    }
+    
+    return line;
   }
 
   private generateMoveExplanation(move: Move, evaluation: any): string {

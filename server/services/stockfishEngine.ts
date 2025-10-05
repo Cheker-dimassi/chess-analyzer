@@ -1,309 +1,446 @@
 import { Chess } from 'chess.js';
 import { ChessAnalysis, ChessPosition } from '@shared/api';
+import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
+import * as os from 'os';
+import * as path from 'path';
+import { createRequire } from 'module';
 
-// Simple Stockfish wrapper for Node.js environment
+// We'll lazy-load a JS/WASM Stockfish package at runtime if no native binary
+// is available. Avoid requiring it at module import time because some
+// WASM bundles assume a browser/worker environment (they call postMessage)
+// which would crash the Node process during module initialization. Instead
+// we load it inside spawnEngine and provide a small global postMessage shim
+// so the WASM bundle can call postMessage safely and we can forward those
+// messages into the engine instance handlers.
+let JsStockfish: any = null;
+
+// UCI Stockfish wrapper that spawns the Stockfish binary per-request.
+// Binary location is configurable via environment variable STOCKFISH_PATH.
+// If binary is not available, code falls back to the previous simulated engine.
 class StockfishEngine {
-  private engine: any;
-  private isReady: boolean = false;
-  private analysisCallbacks: Map<string, (analysis: any) => void> = new Map();
+  private stockfishPath: string | null = null;
+  private poolSize: number;
+  private pool: Array<{ proc: ChildProcessWithoutNullStreams; busy: boolean; id: number }> = [];
+  private queue: Array<{
+    fen: string;
+    depth?: number;
+    movetime?: number;
+    timeout?: number;
+    resolve: (v: any) => void;
+    reject: (e: any) => void;
+  }> = [];
+  private shuttingDown = false;
 
   constructor() {
-    try {
-      // For demo purposes, we'll simulate Stockfish responses
-      // In a real production environment, you'd use actual Stockfish binary
-      this.isReady = true;
-    } catch (error) {
-      console.warn('Stockfish not available, using fallback engine');
-      this.isReady = false;
-    }
-  }
+    this.stockfishPath = this.locateStockfishBinary();
+    this.poolSize = Number(process.env.STOCKFISH_POOL_SIZE || '1') || 1;
 
-  async isEngineReady(): Promise<boolean> {
-    return this.isReady;
-  }
-
-  async analyzePosition(fen: string, depth: number = 15): Promise<any> {
-    if (!this.isReady) {
-      throw new Error('Stockfish engine not ready');
-    }
-
-    const searchDepth = Math.max(1, Math.min(depth, 4));
-
-    // Simulate Stockfish analysis with more realistic results
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        try {
-          const evaluation = this.calculateStockfishEvaluation(fen, searchDepth);
-          const bestMove = this.calculateBestMove(fen, searchDepth);
-
-          const hasLegalMove = Boolean(bestMove?.from && bestMove?.to);
-          const principalVariation = hasLegalMove
-            ? this.calculatePrincipalVariation(fen, bestMove!, Math.min(searchDepth, 3))
-            : [];
-
-          resolve({
-            depth: searchDepth,
-            evaluation,
-            bestMove: hasLegalMove
-              ? bestMove
-              : {
-                  from: '',
-                  to: '',
-                  san: this.describeTerminalPosition(fen),
-                },
-            principalVariation,
-            nodes: Math.floor(Math.random() * 20000) + 10000,
-            time: Math.floor(Math.random() * 400) + 200,
-            nps: Math.floor(Math.random() * 200000) + 300000
-          });
-        } catch (error) {
-          reject(error);
-        }
-      }, Math.random() * 200 + 150);
-    });
-  }
-
-  private calculateStockfishEvaluation(fen: string, depth: number): any {
-    const chess = new Chess(fen);
-    
-    // More sophisticated evaluation
-    let evaluation = this.evaluateMaterial(chess);
-    evaluation += this.evaluatePosition(chess);
-    evaluation += this.evaluateKingSafety(chess);
-    evaluation += this.evaluateMobility(chess);
-    
-    // Add some depth-based accuracy
-    const accuracy = Math.min(depth / 20, 1);
-    evaluation += (Math.random() - 0.5) * 100 * (1 - accuracy);
-    
-    evaluation = Math.round(evaluation);
-    
-    // Check for mate scenarios
-    if (chess.isGameOver()) {
-      if (chess.isCheckmate()) {
-        const mateScore = chess.turn() === 'w' ? -30000 : 30000;
-        return {
-          type: 'mate',
-          value: mateScore > 0 ? 1 : -1,
-          formatted: mateScore > 0 ? 'M1' : 'M-1'
-        };
+    if (!this.stockfishPath) {
+      // Do not require the JS package at construction time to avoid executing
+      // the WASM bundle in the main process. spawnEngine will lazy-load the
+      // package when needed and provide the necessary runtime shims.
+      if (JsStockfish) {
+        console.log('JS Stockfish package will be used when an engine instance is spawned');
       } else {
-        return {
-          type: 'cp',
-          value: 0,
-          formatted: '0.00'
-        };
+        console.warn('Stockfish binary not found. JS package will be lazy-loaded if installed; otherwise falling back to simulated engine.');
       }
     }
-    
-    return {
-      type: 'cp',
-      value: evaluation,
-      formatted: evaluation > 0 ? 
-        `+${(evaluation / 100).toFixed(2)}` : 
-        `${(evaluation / 100).toFixed(2)}`
-    };
+
+    // Only start the engine pool automatically if a native binary exists or
+    // the environment explicitly requests JS-based engines. Otherwise keep
+    // the pool empty so we don't require browser/worker-targeted WASM bundles
+    // during server startup (which can crash Node).
+    if (this.stockfishPath || (process.env.STOCKFISH_FORCE_JS || '').toLowerCase() === 'true') {
+      this.startPool();
+    } else {
+      console.log('Engine pool not started: no native Stockfish binary found. Using simulated fallback. Set STOCKFISH_PATH or set STOCKFISH_FORCE_JS=true to enable JS engine.');
+    }
+    // graceful shutdown
+    process.on('exit', () => this.shutdown());
+    process.on('SIGINT', () => { this.shutdown(); process.exit(); });
+    process.on('SIGTERM', () => { this.shutdown(); process.exit(); });
   }
 
-  private evaluateMaterial(chess: Chess): number {
-    const pieceValues = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
-    let material = 0;
-    
-    const board = chess.board();
-    for (const row of board) {
-      for (const square of row) {
-        if (square) {
-          const value = pieceValues[square.type] || 0;
-          material += square.color === 'w' ? value : -value;
-        }
-      }
+  private locateStockfishBinary(): string | null {
+    const envPath = process.env.STOCKFISH_PATH;
+    if (envPath) return envPath;
+
+    const candidates: string[] = [];
+    // __dirname isn't defined in ESM; compute from import.meta.url when needed
+    let base: string;
+    try {
+      // @ts-ignore
+      base = path.resolve(typeof __dirname !== 'undefined' ? __dirname : path.dirname(new URL(import.meta.url).pathname), '..');
+    } catch (e) {
+      base = path.resolve(process.cwd(), '..');
     }
-    
-    return material;
-  }
+    candidates.push(path.join(base, 'stockfish', 'src', 'stockfish'));
+    candidates.push(path.join(base, 'stockfish', 'stockfish'));
+    candidates.push(path.join(base, 'bin', 'stockfish'));
+    candidates.push(path.join(base, 'bin', 'stockfish.exe'));
+    candidates.push(path.join(base, 'stockfish', 'stockfish.exe'));
 
-  private evaluatePosition(chess: Chess): number {
-    let positional = 0;
-    
-    // Center control
-    const centerSquares = ['d4', 'd5', 'e4', 'e5'];
-    for (const square of centerSquares) {
-      const piece = chess.get(square as any);
-      if (piece) {
-        positional += piece.color === 'w' ? 20 : -20;
-      }
-    }
-    
-    // Development bonus
-    const moves = chess.history();
-    if (moves.length < 10) {
-      // Encourage piece development in opening
-      const developedPieces = this.countDevelopedPieces(chess);
-      positional += developedPieces.white * 10 - developedPieces.black * 10;
-    }
-    
-    return positional;
-  }
-
-  private evaluateKingSafety(chess: Chess): number {
-    let safety = 0;
-    
-    // Simple king safety evaluation
-    const whiteKing = this.findKing(chess, 'w');
-    const blackKing = this.findKing(chess, 'b');
-    
-    if (whiteKing && blackKing) {
-      // Penalize exposed kings
-      const whiteAttackers = this.countAttackers(chess, whiteKing, 'b');
-      const blackAttackers = this.countAttackers(chess, blackKing, 'w');
-      
-      safety -= whiteAttackers * 15;
-      safety += blackAttackers * 15;
-    }
-    
-    return safety;
-  }
-
-  private evaluateMobility(chess: Chess): number {
-    const whiteMoves = chess.moves().length;
-    chess.load(chess.fen().replace(' w ', ' b ').replace(' b ', ' w '));
-    const blackMoves = chess.moves().length;
-    
-    return (whiteMoves - blackMoves) * 2;
-  }
-
-  private calculateBestMove(fen: string, depth: number): any | null {
-    const chess = new Chess(fen);
-    const moves = chess.moves({ verbose: true });
-
-    if (moves.length === 0) {
-      return null;
-    }
-
-    // More sophisticated move selection
-    let bestMove = moves[0];
-    let bestScore = -Infinity;
-    const searchDepth = Math.max(1, Math.min(depth, 4));
-
-    for (const move of moves.slice(0, Math.min(moves.length, 5))) {
-      chess.move(move);
-      const score = this.evaluateQuick(chess, searchDepth - 1);
-      chess.undo();
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestMove = move;
-      }
-    }
-    
-    return {
-      from: bestMove.from,
-      to: bestMove.to,
-      san: bestMove.san,
-      promotion: bestMove.promotion
-    };
-  }
-
-  private evaluateQuick(chess: Chess, depth: number): number {
-    if (depth <= 0 || chess.isGameOver()) {
-      return this.evaluateMaterial(chess) + this.evaluatePosition(chess);
-    }
-
-    const moves = chess.moves({ verbose: true });
-    let maxScore = -Infinity;
-
-    for (const move of moves.slice(0, 3)) {
-      chess.move(move);
-      const score = -this.evaluateQuick(chess, depth - 1);
-      chess.undo();
-      maxScore = Math.max(maxScore, score);
-    }
-
-    return maxScore;
-  }
-
-  private describeTerminalPosition(fen: string): string {
-    const chess = new Chess(fen);
-    if (chess.isCheckmate()) {
-      return chess.turn() === 'w' ? 'Checkmate • Black wins' : 'Checkmate • White wins';
-    }
-    if (chess.isStalemate()) {
-      return 'Stalemate';
-    }
-    if (chess.isDraw()) {
-      return 'Draw';
-    }
-    return 'No legal moves';
-  }
-
-  private calculatePrincipalVariation(fen: string, bestMove: any, depth: number): string[] {
-    const pv = [bestMove.san];
-    const chess = new Chess(fen);
-    
-    chess.move(bestMove);
-    
-    for (let i = 1; i < depth; i++) {
-      const moves = chess.moves({ verbose: true });
-      if (moves.length === 0) break;
-      
-      const nextMove = moves[Math.floor(Math.random() * Math.min(3, moves.length))];
-      pv.push(nextMove.san);
-      chess.move(nextMove);
-    }
-    
-    return pv;
-  }
-
-  private countDevelopedPieces(chess: Chess): { white: number; black: number } {
-    let white = 0, black = 0;
-    
-    // Check if knights and bishops are developed
-    const developmentSquares = {
-      white: ['c3', 'd2', 'e2', 'f3', 'g3', 'c4', 'd3', 'e3', 'f4', 'g4'],
-      black: ['c6', 'd7', 'e7', 'f6', 'g6', 'c5', 'd6', 'e6', 'f5', 'g5']
-    };
-    
-    for (const square of developmentSquares.white) {
-      const piece = chess.get(square as any);
-      if (piece && piece.color === 'w' && (piece.type === 'n' || piece.type === 'b')) {
-        white++;
-      }
-    }
-    
-    for (const square of developmentSquares.black) {
-      const piece = chess.get(square as any);
-      if (piece && piece.color === 'b' && (piece.type === 'n' || piece.type === 'b')) {
-        black++;
-      }
-    }
-    
-    return { white, black };
-  }
-
-  private findKing(chess: Chess, color: 'w' | 'b'): string | null {
-    const board = chess.board();
-    for (let row = 0; row < 8; row++) {
-      for (let col = 0; col < 8; col++) {
-        const piece = board[row][col];
-        if (piece && piece.type === 'k' && piece.color === color) {
-          return String.fromCharCode(97 + col) + (8 - row);
-        }
-      }
+    for (const c of candidates) {
+      try {
+        const fs = require('fs');
+        if (fs.existsSync(c)) return c;
+      } catch {}
     }
     return null;
   }
 
-  private countAttackers(chess: Chess, square: string, attackerColor: 'w' | 'b'): number {
-    let attackers = 0;
-    const moves = chess.moves({ verbose: true });
-    
-    for (const move of moves) {
-      if (move.to === square && chess.get(move.from)?.color === attackerColor) {
-        attackers++;
+  private startPool() {
+    for (let i = 0; i < this.poolSize; i++) {
+      this.spawnEngine(i);
+    }
+  }
+
+  private spawnEngine(id: number) {
+    // If native binary is available, spawn that process
+    if (this.stockfishPath) {
+      try {
+        const proc = spawn(this.stockfishPath, [], { stdio: 'pipe' });
+        proc.stdin.setDefaultEncoding('utf8');
+        this.pool.push({ proc, busy: false, id });
+        // initialize UCI
+        proc.stdin.write('uci\n');
+        proc.stdin.write('isready\n');
+        // ignore global output; per-request handlers will attach when a job is assigned
+        proc.stdout.on('data', () => {});
+        proc.stderr.on('data', (d) => console.warn(`[stockfish ${id} stderr]`, d.toString()));
+        proc.on('exit', (code, sig) => {
+          console.warn(`Stockfish process ${id} exited: code=${code} sig=${sig}`);
+          // remove from pool and respawn unless shutting down
+          this.pool = this.pool.filter(p => p.id !== id);
+          if (!this.shuttingDown) setTimeout(() => this.spawnEngine(id), 500);
+        });
+      } catch (err) {
+        console.warn('Failed to spawn Stockfish process', err);
+      }
+      return;
+    }
+
+    // Otherwise try to use the stockfish.js npm package (WASM build).
+    // We lazy-load it here to avoid top-level require-time crashes
+    // (the WASM bundle expects postMessage in some builds).
+    const tryStartJs = async () => {
+      try {
+        if (!JsStockfish) {
+          try {
+            const req = createRequire(import.meta.url);
+            // attempt both 'stockfish' and 'stockfish.js' package names
+            try {
+              JsStockfish = req('stockfish');
+            } catch (e) {
+              try { JsStockfish = req('stockfish.js'); } catch (e2) { JsStockfish = null; }
+            }
+
+            // If package main didn't expose a usable export, try to require a
+            // Node-friendly build file directly from node_modules/stockfish/src.
+            // Some distributions ship multiple builds (no-Worker, single, etc.).
+            if (!JsStockfish) {
+              try {
+                const fs = require('fs');
+                const nmPath = path.join(process.cwd(), 'node_modules', 'stockfish', 'src');
+                if (fs.existsSync(nmPath)) {
+                  const files: string[] = fs.readdirSync(nmPath);
+                  const preferred = files.find(f => /no-Worker\.js$/.test(f))
+                    || files.find(f => /single\.js$/.test(f))
+                    || files.find(f => /nnue.*\.js$/.test(f))
+                    || files.find(f => /stockfish.*\.js$/.test(f));
+                  if (preferred) {
+                    const abs = path.join(nmPath, preferred);
+                    JsStockfish = req(abs);
+                  }
+                }
+              } catch (e) {
+                // fallthrough to null
+                JsStockfish = JsStockfish || null;
+              }
+            }
+          } catch (e) {
+            JsStockfish = null;
+          }
+        }
+
+        if (!JsStockfish) return;
+
+        // Some builds call postMessage at top-level; provide a temporary shim.
+        const originalPostMessage = (globalThis as any).postMessage;
+        try {
+          (globalThis as any).postMessage = (msg: any) => {
+            // no-op by default; the engine instance will receive messages via onmessage
+            // when we wire it below. Emscripten modules sometimes use postMessage to
+            // print lines; we ignore top-level calls here.
+            return undefined;
+          };
+
+          // Instantiate engine. The package may export a factory function or a Module object.
+          let engineInstance: any = null;
+          if (typeof JsStockfish === 'function') {
+            engineInstance = JsStockfish();
+          } else if (JsStockfish && typeof JsStockfish.default === 'function') {
+            engineInstance = JsStockfish.default();
+          } else if (JsStockfish && typeof JsStockfish.Module !== 'undefined') {
+            // Some packages export an Emscripten Module; call it or use as-is.
+            try { engineInstance = JsStockfish(); } catch { engineInstance = JsStockfish.Module; }
+          }
+
+          if (!engineInstance) {
+            console.warn('stockfish package loaded but engine instance could not be created');
+            return;
+          }
+
+          // The engineInstance typically expects postMessage(msg) to be called to send commands
+          // and calls postMessage/out/Module.print to communicate. We'll provide a small adapter
+          // so runOnEngine can attach an onmessage handler.
+          // If the instance is a function, calling it sends commands.
+          const procLike: any = engineInstance;
+
+          // Ensure there is an onmessage handler slot
+          procLike.onmessage = procLike.onmessage || null;
+          // Provide postMessage if missing
+          if (typeof procLike.postMessage !== 'function') {
+            procLike.postMessage = (m: any) => {
+              try { if (typeof procLike === 'function') procLike(m); }
+              catch (e) { /* ignore */ }
+            };
+          }
+
+          this.pool.push({ proc: procLike as any as ChildProcessWithoutNullStreams, busy: false, id });
+          console.log(`Spawned JS stockfish instance ${id}`);
+        } finally {
+          // restore global
+          (globalThis as any).postMessage = originalPostMessage;
+        }
+      } catch (err) {
+        console.warn('Failed to start JS Stockfish instance', err);
+      }
+    };
+
+    void tryStartJs();
+  }
+
+  private getAvailableEngine() {
+    return this.pool.find(p => !p.busy) || null;
+  }
+
+  private enqueueRequest(req: any) {
+    this.queue.push(req);
+    this.maybeProcessQueue();
+  }
+
+  private maybeProcessQueue() {
+    if (this.queue.length === 0) return;
+    const engine = this.getAvailableEngine();
+    if (!engine) return;
+    const req = this.queue.shift();
+    if (!req) return;
+    this.runOnEngine(engine, req).catch(req.reject);
+  }
+
+  private runOnEngine(engineEntry: { proc: ChildProcessWithoutNullStreams; busy: boolean; id: number }, req: any): Promise<void> {
+    return new Promise((resolveOuter, rejectOuter) => {
+      const { proc, id } = engineEntry;
+      engineEntry.busy = true;
+
+      let stdout = '';
+      let lastInfo: any = {};
+      const onData = (data: Buffer | string) => {
+        const text = typeof data === 'string' ? data : data.toString('utf8');
+        stdout += text;
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        for (const line of lines) {
+          if (line.startsWith('info')) {
+            const mDepth = /depth (\d+)/.exec(line);
+            const mCp = /score cp (-?\d+)/.exec(line);
+            const mMate = /score mate (-?\d+)/.exec(line);
+            const mPv = /pv (.+)$/.exec(line);
+            const mNodes = /nodes (\d+)/.exec(line);
+            const mTime = /time (\d+)/.exec(line);
+            const mNps = /nps (\d+)/.exec(line);
+            if (mDepth) lastInfo.depth = parseInt(mDepth[1], 10);
+            if (mCp) lastInfo.score = { type: 'cp', value: parseInt(mCp[1], 10) };
+            if (mMate) lastInfo.score = { type: 'mate', value: parseInt(mMate[1], 10) };
+            if (mPv) lastInfo.pv = mPv[1];
+            if (mNodes) lastInfo.nodes = parseInt(mNodes[1], 10);
+            if (mTime) lastInfo.time = parseInt(mTime[1], 10);
+            if (mNps) lastInfo.nps = parseInt(mNps[1], 10);
+          }
+          if (line.startsWith('bestmove')) {
+            const bm = /bestmove (\S+)(?: ponder (\S+))?/.exec(line);
+            const bestmove = bm ? bm[1] : null;
+            const ponder = bm ? bm[2] : undefined;
+            cleanup();
+            const result = { bestmove, ponder, info: lastInfo, raw: stdout };
+            try { req.resolve(result); } catch (e) {}
+            engineEntry.busy = false;
+            this.maybeProcessQueue();
+            resolveOuter();
+            return;
+          }
+        }
+      };
+
+      const onErr = (d: Buffer) => console.warn(`[stockfish ${id} stderr]`, d.toString());
+
+      const cleanup = () => {
+        try { proc.stdout.removeListener('data', onData); } catch {}
+        try { proc.stderr.removeListener('data', onErr); } catch {}
+      };
+
+      // Determine if this is a native child process or a JS engine
+      const isNative = !!(proc as any).stdin && typeof (proc as any).stdin.write === 'function';
+
+      if (isNative) {
+        proc.stdout.on('data', onData);
+        proc.stderr.on('data', onErr);
+
+        // Build commands
+        proc.stdin.write('ucinewgame\n');
+        proc.stdin.write(`position fen ${req.fen}\n`);
+        if (typeof req.movetime === 'number') {
+          proc.stdin.write(`go movetime ${Math.max(1, Math.floor(req.movetime))}\n`);
+        } else {
+          proc.stdin.write(`go depth ${Math.max(1, Math.floor(req.depth || 1))}\n`);
+        }
+      } else {
+        // JS Stockfish instance: use postMessage/onmessage style
+        const jsEngine: any = proc as any;
+        const jsOnMessage = (event: any) => {
+          const line = (event && (event.data ?? event)) || event;
+          onData(String(line));
+        };
+        // attach handler
+        try {
+          if (typeof jsEngine.onmessage === 'function' || typeof jsEngine.onmessage === 'undefined') {
+            // some builds expect assignment
+            (jsEngine as any).onmessage = jsOnMessage;
+          }
+          if (typeof jsEngine.addEventListener === 'function') {
+            jsEngine.addEventListener('message', jsOnMessage);
+          }
+        } catch (e) {}
+
+        // send commands via postMessage or by calling the returned function
+        const send = (cmd: string) => {
+          try {
+            if (typeof jsEngine.postMessage === 'function') jsEngine.postMessage(cmd);
+            else if (typeof jsEngine === 'function') jsEngine(cmd);
+          } catch (e) {
+            // ignore
+          }
+        };
+
+        send('uci');
+        send('isready');
+        send('ucinewgame');
+        send(`position fen ${req.fen}`);
+        if (typeof req.movetime === 'number') {
+          send(`go movetime ${Math.max(1, Math.floor(req.movetime))}`);
+        } else {
+          send(`go depth ${Math.max(1, Math.floor(req.depth || 1))}`);
+        }
+      }
+
+      // Timeout
+      const to = setTimeout(() => {
+        try { proc.stdin.write('stop\n'); } catch {}
+        setTimeout(() => {
+          cleanup();
+          engineEntry.busy = false;
+          this.maybeProcessQueue();
+          try { req.reject(new Error('Stockfish request timed out')); } catch (e) {}
+          rejectOuter(new Error('Stockfish request timed out'));
+        }, 250);
+      }, Math.max(1000, req.timeout || 5000));
+
+      // Ensure to clear timeout when resolved
+      const origResolve = req.resolve;
+      req.resolve = (v: any) => { clearTimeout(to); origResolve(v); };
+      const origReject = req.reject;
+      req.reject = (e: any) => { clearTimeout(to); origReject(e); };
+    });
+  }
+
+  async analyzePosition(fen: string, depth: number = Number(process.env.STOCKFISH_DEFAULT_DEPTH || 18), timeout: number = 5000): Promise<any> {
+    if (!this.stockfishPath || this.pool.length === 0) {
+      return this.simulatedAnalysis(fen, Math.min(depth, 4));
+    }
+
+    return new Promise((resolve, reject) => {
+      this.enqueueRequest({ fen, depth, timeout, resolve, reject });
+    });
+  }
+
+  async getStockfishMove(fen: string, difficulty: 'beginner' | 'intermediate' | 'advanced' | 'stockfish'): Promise<any> {
+    const depthMap: Record<string, number> = {
+      beginner: 4,
+      intermediate: 8,
+      advanced: 12,
+      stockfish: Number(process.env.STOCKFISH_DEFAULT_DEPTH || 18)
+    } as any;
+
+    const useMovetime = (process.env.STOCKFISH_USE_MOVETIME || 'false').toLowerCase() === 'true';
+    const movetime = Number(process.env.STOCKFISH_DEFAULT_MOVETIME_MS || '2000');
+
+    const depth = depthMap[difficulty] || 8;
+
+    if (!this.stockfishPath || this.pool.length === 0) {
+      // fallback simulated
+      const chess = new Chess(fen);
+      const moves = chess.moves({ verbose: true });
+      if (moves.length === 0) return null;
+      switch (difficulty) {
+        case 'stockfish':
+        case 'advanced':
+          return this.makeMoveFromVerbose(chess, moves[0]);
+        case 'intermediate':
+          return this.makeMoveFromVerbose(chess, moves[Math.floor(Math.random() * Math.min(3, moves.length))]);
+        default:
+          return this.makeMoveFromVerbose(chess, moves[Math.floor(Math.random() * moves.length)]);
       }
     }
-    
-    return attackers;
+
+    const timeout = 1000 + (useMovetime ? movetime * 2 : depth * 200);
+    const promise = new Promise<any>((resolve, reject) => {
+      this.enqueueRequest({ fen, depth: useMovetime ? undefined : depth, movetime: useMovetime ? movetime : undefined, timeout, resolve, reject });
+    });
+
+    const res: any = await promise;
+    const best = res.bestmove;
+    if (!best) return null;
+    const from = best.slice(0,2);
+    const to = best.slice(2,4);
+    const promotion = best.length > 4 ? best.slice(4) : undefined;
+    const chess = new Chess(fen);
+    const move = chess.move({ from, to, promotion } as any);
+    if (!move) return { from, to, san: best, fen };
+    return { from: move.from, to: move.to, san: move.san, fen: chess.fen(), promotion: move.promotion, info: res.info };
+  }
+
+  private simulatedAnalysis(fen: string, depth: number = 4): any {
+    const chess = new Chess(fen);
+    const moves = chess.moves({ verbose: true });
+    if (moves.length === 0) {
+      return { depth, evaluation: { type: 'cp', value: 0, formatted: '0.00' }, bestMove: { from: '', to: '', san: 'Game Over' }, principalVariation: [] };
+    }
+    const bestMove = moves[0];
+    const evalVal = Math.round((Math.random() - 0.5) * 400);
+    return { depth, evaluation: { type: 'cp', value: evalVal, formatted: evalVal > 0 ? `+${(evalVal/100).toFixed(2)}` : `${(evalVal/100).toFixed(2)}` }, bestMove: { from: bestMove.from, to: bestMove.to, san: bestMove.san }, principalVariation: [bestMove.san] };
+  }
+
+  private makeMoveFromVerbose(chess: Chess, move: any) {
+    chess.move(move);
+    return { from: move.from, to: move.to, san: move.san, fen: chess.fen(), promotion: move.promotion };
+  }
+
+  shutdown() {
+    this.shuttingDown = true;
+    for (const e of this.pool) {
+      try { if (!e.proc.killed) e.proc.kill(); } catch {}
+    }
+    this.pool = [];
   }
 }
 
