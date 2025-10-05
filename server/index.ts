@@ -11,6 +11,7 @@ import {
   deleteAnalysis 
 } from "./routes/analysis";
 import { advancedAnalysis } from "./routes/advancedAnalysis";
+import { testStockfish } from "./routes/stockfish-test";
 import { 
   createGame, 
   makeMove, 
@@ -47,10 +48,11 @@ export function createServer() {
 
   app.get("/api/demo", handleDemo);
 
-  // Chess Analysis Routes
+    // Analysis routes
   app.post("/api/analysis/image", analyzeImage);
   app.post("/api/analysis/position", analyzePosition);
   app.post("/api/analysis/advanced", advancedAnalysis);
+  app.get("/api/analysis/test-stockfish", testStockfish);
   app.get("/api/analysis/history", getAnalysisHistory);
   app.delete("/api/analysis/:id", deleteAnalysis);
 

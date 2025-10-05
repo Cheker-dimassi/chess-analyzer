@@ -35,6 +35,9 @@ class StockfishEngine {
     this.stockfishPath = this.locateStockfishBinary();
     this.poolSize = Number(process.env.STOCKFISH_POOL_SIZE || '1') || 1;
 
+    console.log('Stockfish path:', this.stockfishPath);
+    console.log('STOCKFISH_PATH env:', process.env.STOCKFISH_PATH);
+
     if (!this.stockfishPath) {
       // Do not require the JS package at construction time to avoid executing
       // the WASM bundle in the main process. spawnEngine will lazy-load the
